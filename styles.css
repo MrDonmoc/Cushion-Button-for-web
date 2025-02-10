@@ -1,0 +1,53 @@
+/* General Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #f4f4f9;
+  font-family: 'Arial', sans-serif;
+}
+
+.button-container {
+  perspective: 800px; /* Adds depth for 3D effects */
+}
+
+.cushion-button {
+  position: relative;
+  padding: 15px 30px;
+  font-size: 18px;
+  color: #fff;
+  background-color: #6200ea;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  outline: none;
+  transform-style: preserve-3d;
+  transition: all 0.3s ease-in-out;
+  box-shadow: 
+    0 8px 15px rgba(0, 0, 0, 0.2), 
+    inset 0 -4px 8px rgba(0, 0, 0, 0.1), 
+    inset 0 4px 8px rgba(255, 255, 255, 0.2);
+}
+
+.cushion-button:hover {
+  transform: scale(0.95) translateY(4px); /* Slightly compresses the button */
+  box-shadow: 
+    0 4px 10px rgba(0, 0, 0, 0.15), 
+    inset 0 -2px 6px rgba(0, 0, 0, 0.1), 
+    inset 0 2px 6px rgba(255, 255, 255, 0.2);
+}
+
+.cushion-button:active {
+  transform: scale(0.9) translateY(6px); /* Further compression on click */
+  box-shadow: 
+    0 2px 5px rgba(0, 0, 0, 0.1), 
+    inset 0 -1px 4px rgba(0, 0, 0, 0.1), 
+    inset 0 1px 4px rgba(255, 255, 255, 0.2);
+}
