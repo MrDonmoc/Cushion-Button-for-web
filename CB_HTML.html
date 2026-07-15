@@ -1,16 +1,207 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cushion Button</title>
-  <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realistic Velvet Cushion Button</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: 'Georgia', serif;
+            overflow: hidden;
+        }
+        .button-container {
+            position: relative;
+            width: 300px;
+            height: 150px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #cushionCanvas { cursor: pointer; border-radius: 20px; }
+        .button-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 2px rgba(0, 0, 0, 0.6);
+            pointer-events: none;
+            z-index: 10;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .button-label.pressed {
+            transform: translate(-50%, -45%);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8), 0 0.5px 1px rgba(0, 0, 0, 0.6);
+        }
+    </style>
 </head>
 <body>
-  <div class="button-container">
-    <button class="cushion-button">Contact Me</button>
-  </div>
+    <div class="button-container">
+        <canvas id="cushionCanvas"></canvas>
+        <div class="button-label" id="buttonLabel">Click Me</div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+    (function() {
+        const canvas = document.getElementById('cushionCanvas');
+        const label = document.getElementById('buttonLabel');
+        
+        let mouseX = 0, mouseY = 0;
+        let targetMouseX = 0, targetMouseY = 0;
+        let isHovering = false, isPressed = false;
+        let pressDepth = 0, targetPressDepth = 0;
+        const springStiffness = 0.08, damping = 0.85;
+        let velocity = 0;
 
-  <script src="script.js"></script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.1, 100);
+        camera.position.z = 3;
+        camera.position.y = 0.5;
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+
+        const geometry = new THREE.BoxGeometry(2, 0.6, 1, 64, 16, 32);
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0x8B1538, metalness: 0.0, roughness: 0.8, clearcoat: 0.3,
+            clearcoatRoughness: 0.4, sheen: 1.0, sheenColor: 0xB84A6B,
+            sheenRoughness: 0.3, side: THREE.DoubleSide
+        });
+
+        material.onBeforeCompile = function(shader) {
+            shader.uniforms.mousePos = { value: new THREE.Vector2(0, 0) };
+            shader.uniforms.pressDepth = { value: 0.0 };
+            shader.uniforms.rimColor = { value: new THREE.Color(0xB84A6B) };
+            
+            shader.vertexShader = 'uniform vec2 mousePos; uniform float pressDepth;\nvarying vec3 vNormal; varying vec3 vPosition; varying vec2 vUv; varying float vDeformation; varying vec3 vWorldPosition;\n' + shader.vertexShader;
+            shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvNormal = normal; vUv = uv;');
+            shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvPosition = transformed;\nvec2 uvCenter = uv - 0.5; uvCenter.x *= 2.0;\nfloat dist = length(uvCenter - mousePos);\nfloat falloff = smoothstep(0.4, 0.0, dist);\nvDeformation = falloff;\nif (dist < 0.4) {\n  float deformation = falloff * pressDepth * 0.3;\n  transformed.y -= deformation;\n  float lateralFactor = falloff * (1.0 - falloff) * pressDepth * 0.1;\n  transformed.x += uvCenter.x * lateralFactor;\n  transformed.z += uvCenter.y * lateralFactor;\n}');
+
+            shader.fragmentShader = 'uniform vec3 rimColor; uniform float pressDepth;\nvarying vec3 vNormal; varying vec3 vPosition; varying vec2 vUv; varying float vDeformation; varying vec3 vWorldPosition;\n' + shader.fragmentShader;
+            shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\nvec3 viewDir = normalize(cameraPosition - vWorldPosition);\nfloat NdotV = max(dot(vNormal, viewDir), 0.0);\nfloat rimIntensity = pow(1.0 - NdotV, 2.5);\nvec3 rimLight = rimColor * rimIntensity * 0.6;\nfloat anisotropy = dot(vNormal, vec3(0.0, 1.0, 0.0));\nfloat fuzzFactor = smoothstep(-0.5, 0.5, anisotropy) * 0.3;\nfloat microSpecular = pow(max(dot(reflect(-viewDir, vNormal), viewDir), 0.0), 64.0) * 0.2;\nfloat aoFactor = 1.0 - (vDeformation * pressDepth * 0.4);\nvec3 finalColor = gl_FragColor.rgb;\nfinalColor = finalColor * aoFactor;\nfinalColor += rimLight;\nfinalColor += vec3(fuzzFactor) * 0.2;\nfinalColor += vec3(microSpecular) * 0.3;\ngl_FragColor = vec4(finalColor, gl_FragColor.a);');
+        };
+
+        const cushion = new THREE.Mesh(geometry, material);
+        cushion.castShadow = true;
+        cushion.receiveShadow = true;
+        scene.add(cushion);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+        const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        mainLight.position.set(2, 3, 2);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
+        scene.add(mainLight);
+        const fillLight = new THREE.DirectionalLight(0xffeedd, 0.3);
+        fillLight.position.set(-1, 1, -1);
+        scene.add(fillLight);
+        const rimLight = new THREE.DirectionalLight(0xffaaee, 0.4);
+        rimLight.position.set(0, -1, -2);
+        scene.add(rimLight);
+
+        function getMousePosition(event) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                y: -((event.clientY - rect.top) / rect.height) * 2 + 1
+            };
+        }
+
+        canvas.addEventListener('mousemove', function(e) {
+            const pos = getMousePosition(e);
+            targetMouseX = pos.x * 0.5;
+            targetMouseY = pos.y * 0.5;
+            isHovering = true;
+        });
+        canvas.addEventListener('mouseenter', function() { isHovering = true; });
+        canvas.addEventListener('mouseleave', function() {
+            isHovering = false;
+            targetMouseX = 0; targetMouseY = 0; targetPressDepth = 0;
+        });
+        canvas.addEventListener('mousedown', function() {
+            isPressed = true;
+            targetPressDepth = 1.0;
+            label.classList.add('pressed');
+        });
+        canvas.addEventListener('mouseup', function() {
+            isPressed = false;
+            targetPressDepth = isHovering ? 0.3 : 0;
+            label.classList.remove('pressed');
+        });
+
+        canvas.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const pos = getMousePosition(touch);
+            targetMouseX = pos.x * 0.5;
+            targetMouseY = pos.y * 0.5;
+            isHovering = true; isPressed = true;
+            targetPressDepth = 1.0;
+            label.classList.add('pressed');
+        });
+        canvas.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const pos = getMousePosition(touch);
+            targetMouseX = pos.x * 0.5;
+            targetMouseY = pos.y * 0.5;
+        });
+        canvas.addEventListener('touchend', function() {
+            isPressed = false; isHovering = false;
+            targetPressDepth = 0; targetMouseX = 0; targetMouseY = 0;
+            label.classList.remove('pressed');
+        });
+
+        window.addEventListener('resize', function() {
+            const width = canvas.clientWidth, height = canvas.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        });
+
+        function updatePhysics() {
+            const dx = targetMouseX - mouseX;
+            velocity += dx * springStiffness;
+            velocity *= damping;
+            mouseX += velocity;
+            mouseY += (targetMouseY - mouseY) * springStiffness;
+            pressDepth += (targetPressDepth - pressDepth) * 0.1;
+
+            if (material.uniforms) {
+                material.uniforms.mousePos.value.set(mouseX, mouseY);
+                material.uniforms.pressDepth.value = pressDepth;
+            }
+
+            cushion.rotation.x = mouseY * 0.1;
+            cushion.rotation.z = -mouseX * 0.1;
+            const targetScale = 1 - (pressDepth * 0.05);
+            cushion.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            updatePhysics();
+            renderer.render(scene, camera);
+        }
+        animate();
+    })();
+    </script>
 </body>
 </html>
